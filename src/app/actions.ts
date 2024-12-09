@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 'use server'
 
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from '@google/generative-ai'
@@ -6,7 +7,13 @@ import ytdl from 'ytdl-core'
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!)
 
-export async function summarizeVideo(videoUrl: string): Promise<string> {
+interface SummaryResult {
+  shortSummary: string;
+  longSummary: string;
+  keyPoints: string[];
+}
+
+export async function summarizeVideo(videoUrl: string): Promise<SummaryResult> {
   try {
     const videoId = getYoutubeId(videoUrl)
     if (!videoId) {
@@ -24,7 +31,7 @@ export async function summarizeVideo(videoUrl: string): Promise<string> {
     }
 
     // Limit transcript length to avoid token limits
-    const truncatedTranscript = transcript.slice(0, 8000) + (transcript.length > 8000 ? '...' : '')
+    const truncatedTranscript = transcript.slice(0, 10000) + (transcript.length > 10000 ? '...' : '')
 
     const model = genAI.getGenerativeModel({ 
       model: 'gemini-pro',
@@ -40,38 +47,39 @@ export async function summarizeVideo(videoUrl: string): Promise<string> {
       ],
     })
 
-    const prompt = `Summarize the following YouTube video based primarily on its transcript, with context from the title and description:
+    const shortSummaryPrompt = `Provide a concise summary (50-100 words) of the following YouTube video based on its transcript:
+
+    Title: ${videoTitle}
+    Transcript: ${truncatedTranscript}
+
+    Focus on the main topic and key takeaways.`
+
+    const longSummaryPrompt = `Provide a comprehensive summary (300-500 words) of the following YouTube video based on its transcript:
 
     Title: ${videoTitle}
     Description: ${videoDescription}
-    
-    Transcript:
-    ${truncatedTranscript}
-    
-    Please provide a comprehensive summary of the video's content, focusing on the main points, key ideas, and important details discussed in the transcript. Ensure the summary accurately reflects the video's content rather than just the metadata. Aim for a summary of about 300-500 words.`
+    Transcript: ${truncatedTranscript}
 
-    // Add retries for API calls
-    let attempts = 0
-    const maxAttempts = 3
-    let lastError: Error | null = null
+    Include main points, supporting details, and any conclusions or calls to action presented in the video.`
 
-    while (attempts < maxAttempts) {
-      try {
-        const result = await model.generateContent(prompt)
-        const response = await result.response
-        const text = response.text()
-        return text
-      } catch (error) {
-        lastError = error as Error
-        attempts++
-        if (attempts < maxAttempts) {
-          // Wait before retrying (exponential backoff)
-          await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempts) * 1000))
-        }
-      }
+    const keyPointsPrompt = `List 5-7 key points from the following YouTube video transcript:
+
+    Title: ${videoTitle}
+    Transcript: ${truncatedTranscript}
+
+    Present each point as a brief, informative statement.`
+
+    const [shortSummary, longSummary, keyPoints] = await Promise.all([
+      generateContent(model, shortSummaryPrompt),
+      generateContent(model, longSummaryPrompt),
+      generateContent(model, keyPointsPrompt),
+    ])
+
+    return {
+      shortSummary,
+      longSummary,
+      keyPoints: keyPoints.split('\n').filter(point => point.trim() !== '').map(point => point.replace(/^\d+\.\s*/, '').trim()),
     }
-
-    throw new Error(`Failed to generate summary after ${maxAttempts} attempts. ${lastError?.message || ''}`)
   } catch (error) {
     console.error('Error summarizing video:', error)
     if (error instanceof Error) {
@@ -87,6 +95,27 @@ export async function summarizeVideo(videoUrl: string): Promise<string> {
     }
     throw new Error('An unexpected error occurred while summarizing the video')
   }
+}
+
+async function generateContent(model: any, prompt: string): Promise<string> {
+  const maxAttempts = 3
+  let lastError: Error | null = null
+
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      const result = await model.generateContent(prompt)
+      const response = await result.response
+      return response.text()
+    } catch (error) {
+      lastError = error as Error
+      if (attempt < maxAttempts - 1) {
+        // Wait before retrying (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt + 1) * 1000))
+      }
+    }
+  }
+
+  throw new Error(`Failed to generate content after ${maxAttempts} attempts. ${lastError?.message || ''}`)
 }
 
 async function getTranscript(videoId: string): Promise<string> {

@@ -11,6 +11,7 @@ import { Card, CardContent } from '@/components/ui/card'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Loader2, AlertTriangle, Info } from 'lucide-react'
 import { Progress } from '@/components/ui/progress'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { summarizeVideo } from '@/app/actions'
 
 const formSchema = z.object({
@@ -20,8 +21,14 @@ const formSchema = z.object({
   ),
 })
 
+interface SummaryResult {
+  shortSummary: string;
+  longSummary: string;
+  keyPoints: string[];
+}
+
 export default function VideoSummarizer() {
-  const [summary, setSummary] = useState<string | null>(null)
+  const [summary, setSummary] = useState<SummaryResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [progress, setProgress] = useState(0)
@@ -60,7 +67,6 @@ export default function VideoSummarizer() {
       const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred. Please try again.'
       setError(errorMessage)
       
-      // Show retry button for specific errors
       if (errorMessage.includes('API quota') || errorMessage.includes('try again')) {
         setRetryCount((prev) => prev + 1)
       }
@@ -104,8 +110,8 @@ export default function VideoSummarizer() {
             <p className="text-sm text-gray-500">
               {progress < 30 ? 'Fetching video information...' :
                progress < 60 ? 'Extracting video transcript...' :
-               progress < 90 ? 'Generating summary...' : 
-               'Finalizing summary...'}
+               progress < 90 ? 'Generating summaries...' : 
+               'Finalizing results...'}
             </p>
           </div>
         )}
@@ -126,18 +132,49 @@ export default function VideoSummarizer() {
         )}
 
         {summary && (
-          <>
-            <Alert className="mt-4">
-              <Info className="h-4 w-4" />
-              <AlertTitle>Summary</AlertTitle>
-              <AlertDescription className="mt-2 whitespace-pre-line">
-                {summary}
-              </AlertDescription>
-            </Alert>
-            <p className="mt-2 text-sm text-gray-500">
-              This summary is generated based on the video&apos;s transcript and may not capture all nuances of the video content.
+          <div className="mt-6">
+            <Tabs defaultValue="short">
+              <TabsList className="grid w-full grid-cols-3">
+                <TabsTrigger value="short">Short Summary</TabsTrigger>
+                <TabsTrigger value="long">Long Summary</TabsTrigger>
+                <TabsTrigger value="key">Key Points</TabsTrigger>
+              </TabsList>
+              <TabsContent value="short">
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Short Summary</AlertTitle>
+                  <AlertDescription className="mt-2 whitespace-pre-line">
+                    {summary.shortSummary}
+                  </AlertDescription>
+                </Alert>
+              </TabsContent>
+              <TabsContent value="long">
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Long Summary</AlertTitle>
+                  <AlertDescription className="mt-2 whitespace-pre-line">
+                    {summary.longSummary}
+                  </AlertDescription>
+                </Alert>
+              </TabsContent>
+              <TabsContent value="key">
+                <Alert>
+                  <Info className="h-4 w-4" />
+                  <AlertTitle>Key Points</AlertTitle>
+                  <AlertDescription className="mt-2">
+                    <ul className="list-disc pl-5 space-y-1">
+                      {summary.keyPoints.map((point, index) => (
+                        <li key={index}>{point}</li>
+                      ))}
+                    </ul>
+                  </AlertDescription>
+                </Alert>
+              </TabsContent>
+            </Tabs>
+            <p className="mt-4 text-sm text-gray-500">
+              These summaries are generated based on the video&apos;s transcript and may not capture all nuances of the video content.
             </p>
-          </>
+          </div>
         )}
       </CardContent>
     </Card>
